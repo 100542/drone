@@ -16,6 +16,12 @@ def on_button_pressed_a():
 input.on_button_pressed(Button.A, on_button_pressed_a)
 
 
+def on_radiogroup_disconnect():
+    global radioGroup
+    if radioGroup != 1:
+        arm = 0
+        throttle = 0
+
 def on_button_pressed_ab():
     global arm, throttle
     if arm:
