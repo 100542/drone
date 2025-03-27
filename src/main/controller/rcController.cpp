@@ -1,91 +1,81 @@
 #include <stdio.h>
 
-// NOTE: dit is voor nu nog conceptueel, hoe het zou kunnen werken.
-
-// functies
-int8_t throttle = 0;
-int8_t yaw = 0; // rotaties op z-axis
-int8_t pitch = 0;
-int8_t roll = 0;
+int throttle = 0;
+int yaw = 0;
+int pitch = 0;
+int roll = 0;
 double yawPosition = 0.0;
 double pitchPosition = 0.0;
 double rollPosition = 0.0;
 
-// comms & failsafes
-char buttonPressed = 'o'; // o = nothing, x = sluit alles onmiddelijk af, zonder te wachten.
-int8_t senderGroup = 8; // verplicht matchen met de drone ontvanger
-
-bool arm = false; // false = disarmed, true = armed
-
-void dronePowerToggle () {
-    if (buttonPressed == 'x' && arm == false) {
-        arm = true; // arm drone
-    } else if (buttonPressed == 'x' && arm == true) {
-        arm = false; // disarm drone || alleen als al aan staat
-    }
+struct ControllerInput {
+    bool armToggle = false;
+    bool throttleUp = false;
+    bool throttleDown = false;
+    bool yawLeft = false;
+    bool yawRight = false;
+    bool pitchUp = false;
+    bool pitchDown = false;
+    bool rollLeft = false;
+    bool rollRight = false;
 };
 
-void droneThrottle () {
-// deze actie sluit de drone af, zoals eerder beschreven. ook dronePowerToggle doet hetzelfde.
-    if (buttonPressed == 'x') {
-        throttle = 0;
+ControllerInput controllerState;
+bool arm = false;
 
-// acceleratie van de drone
-    } else if (buttonPressed == 'a') {
-        if (throttle < 40) {
-            throttle += 5;
-        } else if (throttle >= 40) {
-            throttle += 1;
-        }
-    }
+void dronePowerToggle(bool buttonX) {
+    static bool lastState = false; 
 
-// omgekeerde logica bij afdalen in snelheid
-    if (buttonPressed == 'b') {
-        if (throttle > 40) {
-            throttle -= 1;
-        } else if (throttle <= 40) {
-            throttle -= 5;
-        }
+    if (buttonX && !lastState) {
+        arm = !arm; 
+        printf("Drone %s\n", arm ? "Armed" : "Disarmed");
     }
+    
+    lastState = buttonX; 
 }
 
-void droneYaw () {
-// reguleert de yaw, rotatie op z-axis. voor nu is dit dmv een joystick, maar kan ook met een knop.
-    if (yawPosition > 0) {
-        yaw = 1;
-    } else if (yawPosition < 0) {
-        yaw = -1;
-    } else {
-        yaw = 0;
+void droneThrottle(bool buttonA, bool buttonB) {
+    if (buttonA) {
+        throttle += (throttle < 40) ? 5 : 1;
+    } else if (buttonB) {
+        throttle -= (throttle > 40) ? 1 : 5;
     }
+
+    if (throttle < 0) throttle = 0;
 }
 
-void dronePitch () {
-// reguleert de pitch, vooruit en achteruit beweging. voor nu is dit dmv een joystick, maar kan ook met een knop.
-    if (yawPosition > 0 || yawPosition < 0) {
-        pitch = 0;
-    }
-
-    if (pitchPosition > 0) {
-        pitch = 1;
-    } else if (pitchPosition < 0) {
-        pitch = -1;
-    } else {
-        pitch = 0;
-    }
+void droneYaw(double yawPosition) {
+    yaw = (yawPosition > 0) ? 1 : (yawPosition < 0) ? -1 : 0;
 }
 
-void droneRoll () {
-// reguleert de roll, links en rechts beweging. voor nu is dit dmv een joystick, maar kan ook met een knop.
-    if (yawPosition > 0 || yawPosition < 0 ) {
-        roll = 0;
-    }
+void dronePitch(double pitchPosition) {
+    pitch = (pitchPosition > 0) ? 1 : (pitchPosition < 0) ? -1 : 0;
+}
 
-    if (rollPosition > 0) {
-        roll = 1;
-    } else if (rollPosition < 0) {
-        roll = -1;
-    } else {
-        roll = 0;
-    }
+void droneRoll(double rollPosition) {
+    roll = (rollPosition > 0) ? 1 : (rollPosition < 0) ? -1 : 0;
+}
+
+void updateController() {
+    dronePowerToggle(controllerState.armToggle);
+    droneThrottle(controllerState.throttleUp, controllerState.throttleDown);
+    droneYaw(yawPosition);
+    dronePitch(pitchPosition);
+    droneRoll(rollPosition);
+}
+
+int main() {
+    printf("Controller Initialized\n");
+
+    controllerState.armToggle = true; 
+    updateController();
+    
+    controllerState.throttleUp = true; 
+    updateController();
+    
+    controllerState.yawRight = true;
+    yawPosition = 0.5; 
+    updateController();
+
+    return 0;
 }
