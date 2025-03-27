@@ -1,5 +1,11 @@
 #include <stdio.h>
+#include <time.h>
 
+// Radio config 
+int radioChannel = 8;
+bool radioConnected = false;
+
+// Controller inputs en waardes
 int throttle = 0;
 int yaw = 0;
 int pitch = 0;
@@ -8,6 +14,7 @@ double yawPosition = 0.0;
 double pitchPosition = 0.0;
 double rollPosition = 0.0;
 
+// controller inputs struct, om mogelijk te maken dat meerdere buttons tegelijk ingedrukt kunnen worden
 struct ControllerInput {
     bool armToggle = false;
     bool throttleUp = false;
@@ -18,54 +25,132 @@ struct ControllerInput {
     bool pitchDown = false;
     bool rollLeft = false;
     bool rollRight = false;
+    bool failsafe;
 };
 
-ControllerInput controllerState;
+void checkFailsafe() { // verifieert of de drone nog controle heeft en override onmiddelijk alle acties.
+    static unsigned long lastSignalTime = 0;
+    unsigned long currentTime = clock(); 
+
+    if (radioConnected) {
+        lastSignalTime = currentTime; // update de tijd van het laatste signaal
+    }
+
+    if (((currentTime - lastSignalTime) / CLOCKS_PER_SEC) > 5) { // als er meer dan 5 seconden zijn verstreken
+        radioConnected = !controllerState.failsafe;
+    } else {
+        radioConnected = true;
+    }
+
+    if (radioConnected == false || controllerState.failsafe == true) { 
+        // de radioConnected == false is hier vreemd, maar functioneerd als een relay voor de failsafe.
+        // Want uiteraard al werkt de failsafe niet maar is de radio niet meer connected, is de drone nog steeds in de lucht.
+        arm = false;
+        throttle = 0;
+        yaw = 0;
+        pitch = 0;
+        roll = 0;
+    }
+}
+
+// standaard controller op unarmed
+struct ControllerInput controllerState = {};
 bool arm = false;
 
+// functie voor het aan en uitzetten van de drone.
 void dronePowerToggle(bool buttonX) {
-    static bool lastState = false; 
+
+    if (controllerState.failsafe == true ) {
+        arm = false; // extra beveiliging, mocht de drone throttle op hol slaan na een failsafe.
+    }
+
+    static bool lastState = false; // slaat de status van de knop op
 
     if (buttonX && !lastState) {
-        arm = !arm; 
-        printf("Drone %s\n", arm ? "Armed" : "Disarmed");
+        arm = !arm; // veranderd de status van de drone
     }
     
     lastState = buttonX; 
 }
 
 void droneThrottle(bool buttonA, bool buttonB) {
-    if (buttonA) {
-        throttle += (throttle < 40) ? 5 : 1;
-    } else if (buttonB) {
-        throttle -= (throttle > 40) ? 1 : 5;
+    if (controllerState.failsafe == true) {
+        throttle = 0;
+        return;
     }
 
-    if (throttle < 0) throttle = 0;
+    if (buttonA) {
+        if (throttle < 40) { // als de throttle onder de 40 is, verhoog met 5, anders met 1
+            throttle += 5;
+        } else {
+            throttle += 1;
+        }
+    } else if (buttonB) {
+        if (throttle >= 40) {  // als de throttle boven de 40 is, verlaag met 1, anders met 5
+            throttle -= 5;
+        } else {
+            throttle -= 1;
+        }
+    }
+
+    if (throttle < 0) throttle = 0; // throttle kan niet onder de 0
 }
 
-void droneYaw(double yawPosition) {
-    yaw = (yawPosition > 0) ? 1 : (yawPosition < 0) ? -1 : 0;
+void droneYaw (double yawPosition) { // yawPosition is de positie van de yaw stick
+    if (controllerState.failsafe == true) {
+        yawPosition = 0;
+        return;
+    }
+
+    if (yawPosition > 0) {
+        yaw += 1;
+    } else if (yawPosition < 0) {
+        yaw -= 1;
+    } else {
+        yaw = 0;
+    }
 }
 
-void dronePitch(double pitchPosition) {
-    pitch = (pitchPosition > 0) ? 1 : (pitchPosition < 0) ? -1 : 0;
+void dronePitch(double pitchPosition) { // pitchPosition is de positie van de pitch stick
+    if (controllerState.failsafe == true) {
+        pitchPosition = 0;
+        return;
+    }
+
+    if (pitchPosition > 0) {
+        pitch += 1;
+    } else if (pitchPosition < 0) {
+        pitch -= 1;
+    } else {
+        pitch = 0;
+    }
 }
 
-void droneRoll(double rollPosition) {
-    roll = (rollPosition > 0) ? 1 : (rollPosition < 0) ? -1 : 0;
+void droneRoll(double rollPosition) { // rollPosition is de positie van de roll stick
+    if (controllerState.failsafe == true) {
+        rollPosition = 0;
+        return;
+    }
+
+    if (rollPosition > 0) {
+        roll += 1;
+    } else if (rollPosition < 0) {
+        roll -= 1;
+    } else {
+        roll = 0;
+    }
 }
 
-void updateController() {
+void updateController() { // update de informatie naar de controller
+    checkFailsafe(); // nogmaals de failsafe checken, want dit kan anders niet werken en de drone kan een ongeluk veroorzaken.
+    droneYaw(yawPosition);
     dronePowerToggle(controllerState.armToggle);
     droneThrottle(controllerState.throttleUp, controllerState.throttleDown);
-    droneYaw(yawPosition);
     dronePitch(pitchPosition);
     droneRoll(rollPosition);
 }
 
-int main() {
-    printf("Controller Initialized\n");
+int main() { // main functie om de controller te gebruiken
 
     controllerState.armToggle = true; 
     updateController();
