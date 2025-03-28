@@ -1,2 +1,0 @@
-Drafts have been used to create a way smaller version of a drone, to experiment
-with the features of the controller & frame.
