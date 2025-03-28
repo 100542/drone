@@ -1,7 +1,16 @@
 #include <stdio.h>
 #include <time.h>
 
-// Radio config 
+// Matrix voor de LEDs in het bord
+int ledMatrix[5][5] = {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+};
+
+// Radio config
 int radioChannel = 8;
 bool radioConnected = false;
 
@@ -13,6 +22,15 @@ int roll = 0;
 double yawPosition = 0.0;
 double pitchPosition = 0.0;
 double rollPosition = 0.0;
+
+// buttons & joysticks
+bool ButtonA = 5;
+bool ButtonB = 6;
+bool ButtonX = 7;
+
+int yawPin = A0;
+int pitchPin = A1;
+int rollPin = A2;
 
 // controller inputs struct, om mogelijk te maken dat meerdere buttons tegelijk ingedrukt kunnen worden
 struct ControllerInput {
@@ -28,15 +46,19 @@ struct ControllerInput {
     bool failsafe;
 };
 
+// standaard controller op unarmed
+struct ControllerInput controllerState = {};
+bool arm = false;
+unsigned long lastSignalTime = 0;
+    
 void checkFailsafe() { // verifieert of de drone nog controle heeft en override onmiddelijk alle acties.
-    static unsigned long lastSignalTime = 0;
-    unsigned long currentTime = clock(); 
+    unsigned long currentTime = millis(); 
 
     if (radioConnected) {
         lastSignalTime = currentTime; // update de tijd van het laatste signaal
     }
 
-    if (((currentTime - lastSignalTime) / CLOCKS_PER_SEC) > 5) { // als er meer dan 5 seconden zijn verstreken
+    if (((currentTime - lastSignalTime)) > 5) { // als er meer dan 5 seconden zijn verstreken
         radioConnected = !controllerState.failsafe;
     } else {
         radioConnected = true;
@@ -53,12 +75,10 @@ void checkFailsafe() { // verifieert of de drone nog controle heeft en override 
     }
 }
 
-// standaard controller op unarmed
-struct ControllerInput controllerState = {};
-bool arm = false;
+
 
 // functie voor het aan en uitzetten van de drone.
-void dronePowerToggle(bool buttonX) {
+void dronePowerToggle(int buttonX) {
 
     if (controllerState.failsafe == true ) {
         arm = false; // extra beveiliging, mocht de drone throttle op hol slaan na een failsafe.
@@ -73,7 +93,7 @@ void dronePowerToggle(bool buttonX) {
     lastState = buttonX; 
 }
 
-void droneThrottle(bool buttonA, bool buttonB) {
+void droneThrottle(int buttonA, int buttonB) {
     if (controllerState.failsafe == true) {
         throttle = 0;
         return;
@@ -96,7 +116,7 @@ void droneThrottle(bool buttonA, bool buttonB) {
     if (throttle < 0) throttle = 0; // throttle kan niet onder de 0
 }
 
-void droneYaw (double yawPosition) { // yawPosition is de positie van de yaw stick
+void droneYaw (int yawPosition) { // yawPosition is de positie van de yaw stick
     if (controllerState.failsafe == true) {
         yawPosition = 0;
         return;
@@ -111,7 +131,7 @@ void droneYaw (double yawPosition) { // yawPosition is de positie van de yaw sti
     }
 }
 
-void dronePitch(double pitchPosition) { // pitchPosition is de positie van de pitch stick
+void dronePitch(int pitchPosition) { // pitchPosition is de positie van de pitch stick
     if (controllerState.failsafe == true) {
         pitchPosition = 0;
         return;
@@ -126,7 +146,7 @@ void dronePitch(double pitchPosition) { // pitchPosition is de positie van de pi
     }
 }
 
-void droneRoll(double rollPosition) { // rollPosition is de positie van de roll stick
+void droneRoll(int rollPosition) { // rollPosition is de positie van de roll stick
     if (controllerState.failsafe == true) {
         rollPosition = 0;
         return;
@@ -148,6 +168,23 @@ void updateController() { // update de informatie naar de controller
     droneThrottle(controllerState.throttleUp, controllerState.throttleDown);
     dronePitch(pitchPosition);
     droneRoll(rollPosition);
+}
+
+
+void setup() {
+    Serial.begin(9600);
+
+    pinMode(ButtonX, INPUT_PULLUP);
+    pinMode(ButtonB, INPUT_PULLUP);
+    pinMode(ButtonA, INPUT_PULLUP);
+
+    int InputBtnX = digitalRead(ButtonX);
+    int InputBtnB = digitalRead(ButtonB);
+    int InputBtnA = digitalRead(ButtonA);
+
+    yaw = analogRead(yawPin);
+    pitch = analogRead(pitchPin);
+    roll = analogRead(rollPin);
 }
 
 int main() { // main functie om de controller te gebruiken
