@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include <Arduino.h>
 
 // Matrix voor de LEDs in het bord
 int ledMatrix[5][5] = {
@@ -14,6 +15,10 @@ int ledMatrix[5][5] = {
 int radioChannel = 8;
 bool radioConnected = false;
 
+// PIN types 
+char analogPins = 'A';
+char digitalPins = 'D';
+
 // Controller inputs en waardes
 int throttle = 0;
 int yaw = 0;
@@ -24,13 +29,13 @@ double pitchPosition = 0.0;
 double rollPosition = 0.0;
 
 // buttons & joysticks
-bool ButtonA = 5;
-bool ButtonB = 6;
-bool ButtonX = 7;
+bool ButtonA = digitalPins + 5;
+bool ButtonB = digitalPins + 6;
+bool ButtonX = digitalPins + 7;
 
-int yawPin = A0;
-int pitchPin = A1;
-int rollPin = A2;
+int yawPin = analogPins + 0;
+int pitchPin = analogPins + 1;
+int rollPin = analogPins + 2;
 
 // controller inputs struct, om mogelijk te maken dat meerdere buttons tegelijk ingedrukt kunnen worden
 struct ControllerInput {
@@ -50,6 +55,17 @@ struct ControllerInput {
 struct ControllerInput controllerState = {};
 bool arm = false;
 unsigned long lastSignalTime = 0;
+
+// functie voor het aan en uitzetten van de LEDs
+void ledmap(int x, int y, bool state) {
+    if  (x => 0 && x < 5 && y => 0 && y < 5) {
+        ledMatrix[x][y] = if (state = true) {
+            1;
+        } else {
+            0;
+        }
+    }
+}
     
 void checkFailsafe() { // verifieert of de drone nog controle heeft en override onmiddelijk alle acties.
     unsigned long currentTime = millis(); 
