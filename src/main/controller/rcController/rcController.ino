@@ -2,15 +2,6 @@
 #include <time.h>
 #include <Arduino.h>
 
-// Matrix voor de LEDs in het bord
-int ledMatrix[5][5] = {
-    {0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0}
-};
-
 // Radio config
 int radioChannel = 8;
 bool radioConnected = false;
@@ -55,17 +46,6 @@ struct ControllerInput {
 struct ControllerInput controllerState = {};
 bool arm = false;
 unsigned long lastSignalTime = 0;
-
-// functie voor het aan en uitzetten van de LEDs
-void ledmap(int x, int y, bool state) {
-    if  (x => 0 && x < 5 && y => 0 && y < 5) {
-        ledMatrix[x][y] = if (state = true) {
-            1;
-        } else {
-            0;
-        }
-    }
-}
     
 void checkFailsafe() { // verifieert of de drone nog controle heeft en override onmiddelijk alle acties.
     unsigned long currentTime = millis(); 
