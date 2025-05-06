@@ -1,30 +1,49 @@
-#include <stdio.h>
+#include <Arduino.h>
 
-// hier komt de concept code voor de flight controller (mainframe drone)
-
-// Radio config
-int radioChannel = 8;
-bool radioConnected = false;
-
-// PIN types 
-char analogPins = 'A';
-char digitalPins = 'D';
-
-// Controller inputs en waardes
 int throttle = 0;
 int yaw = 0;
 int pitch = 0;
 int roll = 0;
-double yawPosition = 0.0;
-double pitchPosition = 0.0;
-double rollPosition = 0.0;
+bool arm = false;
 
-// buttons & joysticks
-bool ButtonA = digitalPins + 5;
-bool ButtonB = digitalPins + 6;
-bool ButtonX = digitalPins + 7;
+bool failsafe = false;
 
-int yawPin = analogPins + 0;
-int pitchPin = analogPins + 1;
-int rollPin = analogPins + 2;
+void applyControls() {
+    if (!arm || failsafe) {
+        // Sluit motoren af bij failsafe staat
+        throttle = 0;
+        yaw = 0;
+        pitch = 0;
+        roll = 0;
+    }
 
+    // Prints van de waarden
+    Serial.print("Throttle: "); Serial.println(throttle);
+    Serial.print("Yaw: "); Serial.println(yaw);
+    Serial.print("Pitch: "); Serial.println(pitch);
+    Serial.print("Roll: "); Serial.println(roll);
+    Serial.print("ARMED: "); Serial.println(arm ? "ARMED" : "DISARMED");
+    Serial.print("FAILSAFE: "); Serial.println(failsafe ? "AAN" : "UIT");
+}
+
+void readControllerInput() {
+    if (Serial.available() >= 6) {
+        arm      = Serial.read();
+        failsafe = Serial.read(); 
+        throttle = Serial.read();   
+        yaw      = Serial.read();  
+        pitch    = Serial.read();  
+        roll     = Serial.read();   
+    }
+}
+
+void setup() {
+    Serial.begin(9600);
+}
+
+void loop() {
+    readControllerInput();
+    applyControls();
+
+    delay(50);
+}
