@@ -1,295 +1,91 @@
-#include <stdio.h>
-#include <time.h>
 #include <Arduino.h>
 #include <nRF24L01.h>
 #include <RF24.h>
 
-// Radio config
-const radioChannel = RF24 radio(8)
-bool radioConnected = false;
+constexpr uint8_t RF_CE_PIN  = 8;
+constexpr uint8_t RF_CSN_PIN = 9;
+const byte RADIO_ADDRESS[6] = "00001";
 
-const byte address[6] = "00001";
+constexpr uint8_t BTN_ARM_PIN      = 5; 
+constexpr uint8_t BTN_THROTTLE_UP  = 6;
+constexpr uint8_t BTN_THROTTLE_DN  = 7;
 
-// PIN types
-char analogPins = 'A';
-char digitalPins = 'D';
+constexpr uint8_t YAW_PIN   = A0;
+constexpr uint8_t PITCH_PIN = A1;
+constexpr uint8_t ROLL_PIN  = A2;
 
-// Controller inputs en waardes
-int throttle = 0;
-int yaw = 0;
-int pitch = 0;
-int roll = 0;
-double yawPosition = 0.0;
-double pitchPosition = 0.0;
-double rollPosition = 0.0;
-
-// buttons & joysticks
-bool ButtonA = digitalPins + 5;
-bool ButtonB = digitalPins + 6;
-bool ButtonX = digitalPins + 7;
-
-int yawPin = analogPins + 0;
-int pitchPin = analogPins + 1;
-int rollPin = analogPins + 2;
-
-// controller inputs struct, om mogelijk te maken dat meerdere buttons tegelijk ingedrukt kunnen worden
-struct ControllerInput
-{
-    bool armToggle = false;
-    bool throttleUp = false;
-    bool throttleDown = false;
-    bool yawLeft = false;
-    bool yawRight = false;
-    bool pitchUp = false;
-    bool pitchDown = false;
-    bool rollLeft = false;
-    bool rollRight = false;
-    bool failsafe;
+struct ControlPacket {
+  bool   armed;
+  bool   failsafe;
+  int16_t throttle;  
+  int16_t yaw;       
+  int16_t pitch;    
+  int16_t roll;      
 };
 
-// standaard controller op unarmed
-struct ControllerInput controllerState = {};
-bool arm = false;
-unsigned long lastSignalTime = 0;
+RF24 radio(RF_CE_PIN, RF_CSN_PIN);
+ControlPacket tx{};
 
-void checkFailsafe()
-{ // verifieert of de drone nog controle heeft en override onmiddelijk alle acties.
-    unsigned long currentTime = millis();
+unsigned long lastSendMs = 0;
+constexpr uint16_t SEND_INTERVAL_MS = 50;
 
-    if (radioConnected)
-    {
-        lastSignalTime = currentTime; // update de tijd van het laatste signaal
-    }
-
-    if (((currentTime - lastSignalTime)) > 5000)
-    { // als er meer dan 5 seconden zijn verstreken
-        radioConnected = !controllerState.failsafe;
-    }
-    else
-    {
-        radioConnected = true;
-    }
-
-    if (radioConnected == false || controllerState.failsafe == true)
-    {
-        // de radioConnected == false is hier vreemd, maar functioneerd als een relay voor de failsafe.
-        // Want uiteraard al werkt de failsafe niet maar is de radio niet meer connected, is de drone nog steeds in de lucht.
-        arm = false;
-        throttle = 0;
-        yaw = 0;
-        pitch = 0;
-        roll = 0;
-    }
+bool debounceRead(uint8_t pin) {
+  static uint32_t lastChange[20] = {0};
+  static bool lastState[20] = {false};
+  bool state = !digitalRead(pin); 
+  if (state != lastState[pin] && millis() - lastChange[pin] > 25) {
+    lastChange[pin] = millis();
+    lastState[pin] = state;
+  }
+  return lastState[pin];
 }
 
-// functie voor het aan en uitzetten van de drone.
-void dronePowerToggle(int buttonX)
-{
-
-    if (controllerState.failsafe == true)
-    {
-        arm = false; // extra beveiliging, mocht de drone throttle op hol slaan na een failsafe.
-    }
-
-    static bool lastState = false; // slaat de status van de knop op
-
-    if (buttonX && !lastState)
-    {
-        arm = !arm; // veranderd de status van de drone
-    }
-
-    lastState = buttonX;
+int16_t readAxis(uint8_t pin) {
+  int raw = analogRead(pin);    
+  return map(raw, 0, 1023, -500, 500); 
 }
 
-void droneThrottle(int buttonA, int buttonB)
-{
-    if (controllerState.failsafe == true)
-    {
-        throttle = 0;
-        return;
-    }
+void setup() {
+  Serial.begin(115200);
 
-    if (buttonA)
-    {
-        if (throttle < 40)
-        { // als de throttle onder de 40 is, verhoog met 5, anders met 1
-            throttle += 5;
-        }
-        else
-        {
-            throttle += 1;
-        }
-    }
-    else if (buttonB)
-    {
-        if (throttle >= 40)
-        { // als de throttle boven de 40 is, verlaag met 1, anders met 5
-            throttle -= 5;
-        }
-        else
-        {
-            throttle -= 1;
-        }
-    }
+  pinMode(BTN_ARM_PIN, INPUT_PULLUP);
+  pinMode(BTN_THROTTLE_UP, INPUT_PULLUP);
+  pinMode(BTN_THROTTLE_DN, INPUT_PULLUP);
 
-    if (throttle < 0)
-        throttle = 0; // throttle kan niet onder de 0
+  if (!radio.begin()) {
+    Serial.println(F("NRF24 init failed!"));
+  }
+  radio.openWritingPipe(RADIO_ADDRESS);
+  radio.setPALevel(RF24_PA_HIGH);
+  radio.setDataRate(RF24_1MBPS);
+  radio.stopListening();
+
+  Serial.println(F("RC controller ready"));
 }
 
-void droneYaw(int yawPosition)
-{ // yawPosition is de positie van de yaw stick
-    if (controllerState.failsafe == true)
-    {
-        yawPosition = 0;
-        return;
+void loop() {
+  static bool armLatched = false;
+  if (debounceRead(BTN_ARM_PIN)) {
+    if (!armLatched) {  
+      tx.armed = !tx.armed;
+      armLatched = true;
     }
+  } else {
+    armLatched = false;
+  }
 
-    if (yawPosition > 0)
-    {
-        yaw += 1;
-    }
-    else if (yawPosition < 0)
-    {
-        yaw -= 1;
-    }
-    else
-    {
-        yaw = 0;
-    }
-}
+  bool throttleUp   = debounceRead(BTN_THROTTLE_UP);
+  bool throttleDown = debounceRead(BTN_THROTTLE_DN);
 
-void dronePitch(int pitchPosition)
-{ // pitchPosition is de positie van de pitch stick
-    if (controllerState.failsafe == true)
-    {
-        pitchPosition = 0;
-        return;
-    }
+  if (throttleUp && tx.throttle < 1000)  tx.throttle += (tx.throttle < 400 ? 5 : 1);
+  if (throttleDown && tx.throttle > 0)   tx.throttle -= (tx.throttle > 400 ? 5 : 1);
 
-    if (pitchPosition > 0)
-    {
-        pitch += 1;
-    }
-    else if (pitchPosition < 0)
-    {
-        pitch -= 1;
-    }
-    else
-    {
-        pitch = 0;
-    }
-}
+  tx.yaw   = readAxis(YAW_PIN);
+  tx.pitch = readAxis(PITCH_PIN);
+  tx.roll  = readAxis(ROLL_PIN);
 
-void droneRoll(int rollPosition)
-{ // rollPosition is de positie van de roll stick
-    if (controllerState.failsafe == true)
-    {
-        rollPosition = 0;
-        return;
-    }
-
-    if (rollPosition > 0)
-    {
-        roll += 1;
-    }
-    else if (rollPosition < 0)
-    {
-        roll -= 1;
-    }
-    else
-    {
-        roll = 0;
-    }
-}
-
-void updateController()
-{                    // update de informatie naar de controller
-    checkFailsafe(); // nogmaals de failsafe checken, want dit kan anders niet werken en de drone kan een ongeluk veroorzaken.
-    droneYaw(yawPosition);
-    dronePowerToggle(controllerState.armToggle);
-    droneThrottle(controllerState.throttleUp, controllerState.throttleDown);
-    dronePitch(pitchPosition);
-    droneRoll(rollPosition);
-}
-
-void setup()
-{
-    Serial.begin(9600);
-
-    radio.begin();
-    radio.openWritingPipe(address);
-    radio.setPALevel(RF24_PA_MIN);
-    radio.stopListening();
-
-    pinMode(ButtonX, INPUT_PULLUP);
-    pinMode(ButtonB, INPUT_PULLUP);
-    pinMode(ButtonA, INPUT_PULLUP);
-
-    int InputBtnX = digitalRead(ButtonX);
-    int InputBtnB = digitalRead(ButtonB);
-    int InputBtnA = digitalRead(ButtonA);
-
-    yaw = analogRead(yawPin);
-    pitch = analogRead(pitchPin);
-    roll = analogRead(rollPin);
-}
-
-void loop()
-{ // main functie om de controller te gebruiken
-
-    const char text[] = "Transmitting over radio channel";
-    radio.write(&text, sizeof(text));
-    delay(1000);
-
-    if (controllerState.armToggle = true;)
-    {
-        updateController();
-    }
-
-    if (controllerState.throttleUp = true;)
-    {
-        updateController();
-    }
-
-    if (controllerState.throttleDown = true;)
-    {
-        updateController();
-    }
-
-    if (controllerState.yawRight = true;)
-    {
-        yawPosition = 0.5;
-        updateController();
-    }
-
-    if (controllerState.yawLeft = true;)
-    {
-        yawPosition = -0.5;
-        updateController();
-    }
-
-    if (controllerState.pitchUp = true;)
-    {
-        pitchPosition = 0.5;
-        updateController();
-    }
-
-    if (controllerState.pitchDown = true;)
-    {
-        pitchPosition = -0.5;
-        updateController();
-    }
-
-    if (controllerState.rollRight = true;)
-    {
-        rollPosition = 0.5;
-        updateController();
-    }
-
-    if (controllerState.rollLeft = true;) {
-        rollPosition = -0.5;
-        updateController();
-    }
-
-    return 0;
+  if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
+    radio.write(&tx, sizeof(tx));
+    lastSendMs = millis();
+  }
 }
