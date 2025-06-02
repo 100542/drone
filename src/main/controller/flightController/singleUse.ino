@@ -1,25 +1,19 @@
-#include <Arduino.h>
 #include <Servo.h>
 
-Servo ESC;
-
-// Servo library voor de ESC communication
-// Hou de opstartfrequentie op de gehanteerde waarde. Dat is lager op hetzelfde als 1ms. 
-
-constexpr uint8_t ROTOR1_PIN = 9; 
-
-constexpr uint8_t THROTTLE_PWM = 75; 
+Servo esc;           
+const int escPin = 9;
 
 void setup() {
-  ESC.attach(9,1000,2000)
-  Serial.begin(115200);
+  esc.attach(escPin);
 
-  pinMode(ROTOR1_PIN, OUTPUT);
-  analogWrite(ROTOR1_PIN, 0);  
+  esc.writeMicroseconds(1000);
+  delay(2000);
 
-  Serial.println(F("Single rotor test starting..."));
+  esc.writeMicroseconds(1200);
+  delay(5000);
+
+  esc.writeMicroseconds(1000);
 }
 
 void loop() {
-  analogWrite(ROTOR1_PIN, THROTTLE_PWM);
 }
