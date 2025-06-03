@@ -1,82 +1,133 @@
-#include <Arduino.h>
-#include <nRF24L01.h>
-#include <RF24.h>
+#include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
+#include <Servo.h>
 
-constexpr uint8_t RF_CE_PIN  = 8;
-constexpr uint8_t RF_CSN_PIN = 9;
+const char* ssid = "SSID_HIER";
+const char* password = "PW_HIER";
+WiFiUDP Udp;
+const unsigned int localUdpPort = 4210;
+char incomingPacket[255];
 
-constexpr uint8_t ROTOR1_PIN = 5; 
-constexpr uint8_t ROTOR2_PIN = 6;  
-constexpr uint8_t ROTOR3_PIN = 9;  
-constexpr uint8_t ROTOR4_PIN = 10; 
+Servo esc1;
+Servo esc2;
+Servo esc3;
+Servo esc4;
 
-const byte RADIO_ADDRESS[6] = "00001";
+const int escPin1 = D4;
+const int escPin2 = D3;
+const int escPin3 = D2; 
+const int escPin4 = D1; 
 
-struct ControlPacket {
-  bool   armed;
-  bool   failsafe;
-  int16_t throttle;  
-  int16_t yaw;      
-  int16_t pitch;     
-  int16_t roll;      
-};
+int speedM1 = 1000;
+int speedM2 = 1000;
+int speedM3 = 1000;
+int speedM4 = 1000;
 
-RF24 radio(RF_CE_PIN, RF_CSN_PIN);
-ControlPacket rx{};
-bool radioConnected = false;
-unsigned long lastPacketMs = 0;
-
-constexpr uint16_t FAILSAFE_TIMEOUT_MS = 500; 
-
-void stopMotors() {
-  analogWrite(ROTOR1_PIN, 0);
-  analogWrite(ROTOR2_PIN, 0);
-  analogWrite(ROTOR3_PIN, 0);
-  analogWrite(ROTOR4_PIN, 0);
-}
-
-void applyControls() {
-  if (!rx.armed || rx.failsafe || !radioConnected) {
-    stopMotors();
-    return;
-  }
-  uint8_t pwm = map(rx.throttle, 0, 1000, 0, 255);
-  analogWrite(ROTOR1_PIN, pwm);
-  analogWrite(ROTOR2_PIN, pwm);
-  analogWrite(ROTOR3_PIN, pwm);
-  analogWrite(ROTOR4_PIN, pwm);
-}
+bool controllerConnected = false;
 
 void setup() {
   Serial.begin(115200);
+  
+  esc1.attach(escPin1);
+  esc2.attach(escPin2);
+  esc3.attach(escPin3);
+  esc4.attach(escPin4);
 
-  pinMode(ROTOR1_PIN, OUTPUT);
-  pinMode(ROTOR2_PIN, OUTPUT);
-  pinMode(ROTOR3_PIN, OUTPUT);
-  pinMode(ROTOR4_PIN, OUTPUT);
-  stopMotors();
-
-  if (!radio.begin()) {
-    Serial.println(F("NRF24 init failed!"));
+  for (int i = 0; i < 3; i++) {
+    esc1.writeMicroseconds(1000);
+    esc2.writeMicroseconds(1000);
+    esc3.writeMicroseconds(1000);
+    esc4.writeMicroseconds(1000);
+    delay(500);
   }
-  radio.openReadingPipe(1, RADIO_ADDRESS);
-  radio.setPALevel(RF24_PA_HIGH);
-  radio.setDataRate(RF24_1MBPS);
-  radio.startListening();
 
-  Serial.println(F("Flight controller ready"));
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Udp.begin(localUdpPort);
+  Serial.println("\nWiFi connected");
+  Serial.print("IP: "); Serial.println(WiFi.localIP());
+  Serial.print("Listening on UDP port "); Serial.println(localUdpPort);
 }
 
 void loop() {
-  if (radio.available()) {
-    radio.read(&rx, sizeof(rx));
-    lastPacketMs = millis();
-    radioConnected = true;
+  int packetSize = Udp.parsePacket();
+  if (packetSize) {
+    int len = Udp.read(incomingPacket, 255);
+    if (len > 0) incomingPacket[len] = '\0';
+    
+    controllerConnected = true;
+    processCommand(String(incomingPacket));
+  } else {
+    controllerConnected = false;
+    applyFailsafe();
   }
 
-  if (millis() - lastPacketMs > FAILSAFE_TIMEOUT_MS) {
-    radioConnected = false;
+  esc1.writeMicroseconds(speedM1);
+  esc2.writeMicroseconds(speedM2);
+  esc3.writeMicroseconds(speedM3);
+  esc4.writeMicroseconds(speedM4);
+
+  delay(20);
+}
+
+void processCommand(String cmd) {
+  cmd.trim();
+
+  if (cmd == "THROTTLE_UP") {
+    adjustThrottle(50);
+  } else if (cmd == "THROTTLE_DOWN") {
+    adjustThrottle(-50);
+  } else if (cmd == "MOVE_LEFT") {
+    speedM1 -= 20; speedM3 += 20;
+  } else if (cmd == "MOVE_RIGHT") {
+    speedM1 += 20; speedM3 -= 20;
+  } else if (cmd == "TURN_LEFT") {
+    speedM2 -= 20; speedM4 += 20;
+  } else if (cmd == "TURN_RIGHT") {
+    speedM2 += 20; speedM4 -= 20;
+  } else if (cmd == "LAND") {
+    performLanding();
+  } else if (cmd == "PING") {
+    controllerConnected = true;
   }
 
-  applyControls();
+  clampSpeeds();
+}
+
+void adjustThrottle(int delta) {
+  speedM1 += delta;
+  speedM2 += delta;
+  speedM3 += delta;
+  speedM4 += delta;
+}
+
+void clampSpeeds() {
+  speedM1 = constrain(speedM1, 1000, 2000);
+  speedM2 = constrain(speedM2, 1000, 2000);
+  speedM3 = constrain(speedM3, 1000, 2000);
+  speedM4 = constrain(speedM4, 1000, 2000);
+}
+
+void applyFailsafe() {
+  speedM1 = 1000;
+  speedM2 = 1000;
+  speedM3 = 1000;
+  speedM4 = 1000;
+}
+
+void performLanding() {
+  while (speedM1 > 1000 || speedM2 > 1000 || speedM3 > 1000 || speedM4 > 1000) {
+    adjustThrottle(-10);
+    clampSpeeds();
+    esc1.writeMicroseconds(speedM1);
+    esc2.writeMicroseconds(speedM2);
+    esc3.writeMicroseconds(speedM3);
+    esc4.writeMicroseconds(speedM4);
+    delay(100);
+  }
 }
