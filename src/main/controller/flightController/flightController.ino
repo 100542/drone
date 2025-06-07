@@ -83,13 +83,25 @@ void processCommand(String cmd) {
   } else if (cmd == "THROTTLE_DOWN") {
     adjustThrottle(-50);
   } else if (cmd == "MOVE_LEFT") {
-    speedM1 -= 20; speedM3 += 20;
+    speedM1 += 20;
+    speedM4 += 20;
+    speedM2 -= 20;
+    speedM3 -= 20;
   } else if (cmd == "MOVE_RIGHT") {
-    speedM1 += 20; speedM3 -= 20;
+    speedM1 -= 20;
+    speedM4 -= 20;
+    speedM2 += 20;
+    speedM3 += 20;
   } else if (cmd == "TURN_LEFT") {
-    speedM2 -= 20; speedM4 += 20;
+    speedM1 -= 20;
+    speedM3 -= 20;
+    speedM2 += 20;
+    speedM4 += 20;
   } else if (cmd == "TURN_RIGHT") {
-    speedM2 += 20; speedM4 -= 20;
+    speedM1 += 20;
+    speedM3 += 20;
+    speedM2 -= 20;
+    speedM4 -= 20;
   } else if (cmd == "LAND") {
     performLanding();
   } else if (cmd == "PING") {
