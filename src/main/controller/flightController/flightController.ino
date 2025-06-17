@@ -2,8 +2,8 @@
 #include <WiFiUdp.h>
 #include <Servo.h>
 
-const char* ssid = "SSID_HIER";
-const char* password = "PW_HIER";
+const char* ssid = "sjcdswchbec";
+const char* password = "ascuoasncaehjbc";
 WiFiUDP Udp;
 const unsigned int localUdpPort = 4210;
 char incomingPacket[255];
@@ -13,10 +13,10 @@ Servo esc2;
 Servo esc3;
 Servo esc4;
 
-const int escPin1 = D4;
+const int escPin1 = D1;
 const int escPin2 = D3;
-const int escPin3 = D2; 
-const int escPin4 = D1; 
+const int escPin3 = D7; 
+const int escPin4 = D8; 
 
 int speedM1 = 1000;
 int speedM2 = 1000;
